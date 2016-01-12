@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Class name="MyClippings.Item">
+<Super>%Persistent</Super>
+<TimeCreated>63918,75650.248723</TimeCreated>
+
+<Parameter name="MonthList">
+<Default>,January,February,March,April,May,June,July,August,September,October,November,December</Default>
+</Parameter>
+
+<Parameter name="WeekList">
+<Default>Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday</Default>
+</Parameter>
+
+<Property name="Title">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="Author">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="LocationStart">
+<Type>%Integer</Type>
+</Property>
+
+<Property name="LocationEnd">
+<Type>%Integer</Type>
+</Property>
+
+<Property name="Page">
+<Type>%Integer</Type>
+</Property>
+
+<Property name="Type">
+<Type>%String</Type>
+<Parameter name="VALUELIST" value=",Bookmark,Highlight"/>
+</Property>
+
+<Property name="Date">
+<Type>%TimeStamp</Type>
+</Property>
+
+<Property name="Text">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100000"/>
+</Property>
+
+<Method name="Import">
+<Description>
+Import MyClippings.txt</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>FileName="C:\Users\eduard\Desktop\My Clippings.txt"</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Stream=##class(%Stream.FileCharacter).%New()
+	Set Status = Stream.LinkToFile(FileName)
+	While 'Stream.AtEnd {
+		Set Line = Stream.ReadLine()
+		If Line [ "=========" {
+			// we built the item arr, parse it
+			Set Status1 = ..ParceInfo(.ItemArr, .ItemProperties)
+			Set Status = $$$ADDSC(Status, Status1)
+			Set Status2 = ..AddItem(.ItemProperties)
+			Set Status = $$$ADDSC(Status, Status2)
+			Kill ItemArr, ItemProperties
+			Continue 
+		}
+		Set ItemArr($I(ItemArr)) = Line
+	}
+	Return Status
+]]></Implementation>
+</Method>
+
+<Method name="Export">
+<Description>
+Builds MyClippings.txt file from stored objects</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>FileName="C:\Users\eduard\Desktop\My Clippings2.txt"</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Stream=##class(%Stream.FileCharacter).%New()
+	Set Status = Stream.LinkToFile(FileName)
+	Set ExtentRS = ##class(%ResultSet).%New($ClassName()_":Extent")
+	Do ExtentRS.Execute()
+	While (ExtentRS.Next()) {
+		Set Id = ExtentRS.Data("ID")
+		Do Stream.Write(..ExportItem(Id))
+	}
+	Set Status = Stream.%Save()
+	Return Status
+]]></Implementation>
+</Method>
+
+<Method name="Beautify">
+<Description>
+Trims Text, deletes bookmarks </Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	&sql(UPDATE MyClippings.Item SET Text = TRIM(Text))
+	Do ..DeleteBookmarks()
+	//&sql(DELETE FROM MyClippings.Item WHERE $LENGTH(Text,' ')<=2)
+]]></Implementation>
+</Method>
+
+<Method name="ParceInfo">
+<Description>
+Converts ItemArr array dump into Properties structured array. 
+Extracted properties: Title, Author, Type, Page, LocationStart, LocationEnd, Date, Text
+Input sample:
+ItemArr=4
+ItemArr(1)="TITLE (AUTHOR)"
+ItemArr(2)="- Your TYPE on Page PAGE | Location LOCATIONSTART-LOCATIONEND | Added on WeekDay, DATE"
+ItemArr(3)=""
+ItemArr(4)="Text"
+Note, Page part may be missing, Location may be only one 
+Do ##class(MyClippings.Item).ParceItem(.ItemArr)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ItemArr,*Properties]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status = $$$OK
+	Try {
+		Kill Properties
+		Set Properties("Title") = $Piece(ItemArr(1), " (", *-1)
+		Set Properties("Author") = $Extract($Piece(ItemArr(1), " (",*), 1, *-1)
+		Set Properties("Type") = $Piece(ItemArr(2), " ", 3)
+		If ItemArr(2) [ "Page" {
+			Set Properties("Page") = $Piece($Piece(ItemArr(2), "Page ", *), " ", 1)
+		} Else {
+			Set Properties("Page") = ""
+		}
+		Set Locations = $Piece($Piece(ItemArr(2), "Location ", *), " ", 1)
+		If $Length(Locations,"-") = 2 {
+			Set Properties("LocationStart") = $Piece(Locations, "-" ,1) 
+			Set Properties("LocationEnd") = $Piece(Locations, "-", 2) 
+		} Else {
+			Set Properties("LocationStart") = Locations
+			Set Properties("LocationEnd") = Locations
+		}
+		Set DateText = $Piece($Piece(ItemArr(2), "Added on ",*), ", ", 2, *)
+		Set YearOpt = 3 // Represent with two-digit years those dates falling within the sliding temporal window defined by startwin 
+		Set MinYear = $ZDH("2000-01-01",3)
+		Set Properties("Date") = $ZDTH(DateText, 5, 3, , YearOpt, MinYear)
+		Set Properties("Text") = $Translate(ItemArr(4), $C(160), $C(32)) // replace 160 char with whitespace
+	} Catch ex {
+		Set Status = ex.AsStatus()
+	}
+	Return Status
+]]></Implementation>
+</Method>
+
+<Method name="AddItem">
+<Description>
+Converts Properties array into MyClippings.Item object and saves it.
+Input properties: Title, Author, Type, Page, LocationStart, LocationEnd, Date, Text</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&Properties]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status = $$$OK
+	Try {
+		Set Item = ..%New()
+		Set Item.Author = Properties("Author")
+		Set Item.Date = $ZDT(Properties("Date"), 3, 1)
+		Set Item.LocationStart = Properties("LocationStart")
+		Set Item.LocationEnd = Properties("LocationEnd")
+		Set Item.Page = Properties("Page")
+		Set Item.Text = Properties("Text")
+		Set Item.Title = Properties("Title")
+		Set Item.Type = Properties("Type")
+		Set Status = Item.%Save()
+	} Catch Exception {
+		Set Status = Exception.AsStatus()
+	}
+	Return Status
+]]></Implementation>
+</Method>
+
+<Method name="DeleteBookmarks">
+<Description>
+Deletes all items where Type is a Bookmark </Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	&sql(DELETE FROM MyClippings.Item where Type = 'Bookmark')
+]]></Implementation>
+</Method>
+
+<Method name="ExportItem">
+<Description>
+Converts one item from internal to Kindle format. Output sample:
+Смотритель. Книга 2. Железная бездна (Виктор Олегович Пелевин)
+- Your Highlight on Page 146 | Location 2226-2230 | Added on Sunday, December,30,,2012 01:38:14AM
+
+Умофон Ветхой Земли, несмотря на свою безблагодатность, был сосудом ритуальной некромантии.
+=========</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>Id</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	#define CRLF $C(13,10)
+	Set Item = ..%OpenId(Id)
+	Set WeekList = $LFS(..#WeekList)
+
+	Set String = ""	
+	Set String = String _ Item.Title _ " (" _ Item.Author _ ")" _ $$$CRLF
+	Set String = String _ "- Your " _ Item.Type _ " on Page " _ Item.Page _
+						  " | Location " _ Item.LocationStart _ "-" _ Item.LocationEnd _ 
+						  " | Added on " _ $Lg(WeekList, $System.SQL.DAYOFWEEK(Item.Date)) _ 
+						  ", " _ $ZDT($ZDTH(Item.Date, 3, 1), 5, 3, , ..#MonthList) _ $$$CRLF _ $$$CRLF
+	Set String = String _ Item.Text _ $$$CRLF
+	Set String = String _ "=========" _ $$$CRLF
+	Return String
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^MyClippings.ItemD</DataLocation>
+<DefaultData>ItemDefaultData</DefaultData>
+<IdLocation>^MyClippings.ItemD</IdLocation>
+<IndexLocation>^MyClippings.ItemI</IndexLocation>
+<StreamLocation>^MyClippings.ItemS</StreamLocation>
+<Data name="ItemDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Book</Value>
+</Value>
+<Value name="3">
+<Value>Author</Value>
+</Value>
+<Value name="4">
+<Value>LocationStart</Value>
+</Value>
+<Value name="5">
+<Value>LocationEnd</Value>
+</Value>
+<Value name="6">
+<Value>Type</Value>
+</Value>
+<Value name="7">
+<Value>Date</Value>
+</Value>
+<Value name="8">
+<Value>Text</Value>
+</Value>
+<Value name="9">
+<Value>Page</Value>
+</Value>
+<Value name="10">
+<Value>Title</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>
