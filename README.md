@@ -7,6 +7,6 @@ Import [MyClippings.Item](https://raw.githubusercontent.com/eduard93/MyClippings
 
 ## Use
 
-1. Import your MyClippings.xml via `Write ##class(MyClippings.Item).Import(/path/to/MyClippings.txt)
+1. Import your MyClippings.xml via `Write ##class(MyClippings.Item).Import("/path/to/MyClippings.txt")`
 2. Work with imported items via SQL, globals, objects. Try: `Do ##class(MyClippings.Item).Beautify()`
-3. Export results  with: `Write ##class(MyClippings.Item).Export(/path/to/MyClippings.txt)`
+3. Export results  with: `Write ##class(MyClippings.Item).Export("/path/to/MyClippings.txt")`
